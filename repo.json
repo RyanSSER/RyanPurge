@@ -1,0 +1,13 @@
+{
+  "$meta": {
+    "name": "RyanPurge Official Repository",
+    "description": "Official RyanPurge 1.0.0 repository by RyanOS for Revenge.",
+    "author": "RyanOS",
+    "homepage": "https://yjaryan.github.io/RyanPurge/"
+  },
+  "com.ryanpurge": {
+    "name": "RyanPurge",
+    "version": "1.0.0",
+    "author": "RyanOS"
+  }
+}

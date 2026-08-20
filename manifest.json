@@ -1,0 +1,15 @@
+{
+  "name": "RyanPurge",
+  "description": "Deleting messages is better than deleting friendships; this plugin lets you safely and precisely delete your own messages from either a DM or a specific Discord channel.",
+  "authors": [
+    {
+      "name": "RyanOS",
+      "id": "0"
+    }
+  ],
+  "main": "index.js",
+  "vendetta": {
+    "icon": null
+  },
+  "hash": "272FAA8D1D1D2F30EF10F02B2D6EAFDEE882979F5BFFD276C08774B33CC730A0"
+}

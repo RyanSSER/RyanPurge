@@ -1,0 +1,30 @@
+{
+  "format": 1,
+  "name": "RyanPurge Official Repository",
+  "description": "RyanPurge by RyanOS: safely and precisely delete your own Discord messages from a DM or a specific Discord channel.",
+  "plugins": {
+    "com.ryanpurge": {
+      "name": "RyanPurge",
+      "description": "Deleting messages is better than deleting friendships; this plugin lets you safely and precisely delete your own messages from either a DM or a specific Discord channel.",
+      "author": "RyanOS",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://yjaryan.github.io/RyanPurge/RyanPurge-1.0.0.zip",
+          "sha256": "f6d8403d0994d21c6fbde1b8027b022089ad82cf7393de127ad7325e8550671e",
+          "size": 58104,
+          "dependencies": {
+            "revenge.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
+    }
+  }
+}
