@@ -7,10 +7,10 @@
 
   [![Latest Release](https://img.shields.io/github/v/release/RyanSSER/RyanPurge?display_name=tag&label=release&color=5865f2)](https://github.com/RyanSSER/RyanPurge/releases/latest)
   [![Pages](https://github.com/RyanSSER/RyanPurge/actions/workflows/static.yml/badge.svg)](https://github.com/RyanSSER/RyanPurge/actions/workflows/static.yml)
-  [![Install for Revenge](https://img.shields.io/badge/install%20for-Revenge-5865f2)](https://yjaryan.github.io/RyanPurge/)
+  [![Install for Revenge](https://img.shields.io/badge/install%20for-Revenge-5865f2)](https://ryansser.github.io/RyanPurge/)
 
   <p>
-    <a href="https://yjaryan.github.io/RyanPurge/">Install RyanPurge</a>
+    <a href="https://ryansser.github.io/RyanPurge/">Install RyanPurge</a>
     ·
     <a href="https://github.com/RyanSSER/RyanPurge/releases/tag/v1.0.0">View release</a>
     ·
@@ -27,7 +27,7 @@ RyanPurge is an official **RyanOS** project for Revenge. It provides a deliberat
 Install RyanPurge directly from the official repository:
 
 ```text
-https://yjaryan.github.io/RyanPurge/
+https://ryansser.github.io/RyanPurge/
 ```
 
 Open the link in Revenge, add the repository, and install **RyanPurge 1.0.0**. Use only the official RyanOS repository; unofficial mirrors, modified builds, and rebranded packages are not supported.
