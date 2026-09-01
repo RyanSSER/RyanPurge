@@ -12,7 +12,7 @@
   <p>
     <a href="https://ryansser.github.io/RyanPurge/">Install RyanPurge</a>
     ·
-    <a href="https://github.com/RyanSSER/RyanPurge/releases/tag/v1.0.16">View release</a>
+    <a href="https://github.com/RyanSSER/RyanPurge/releases/tag/v1.0.17">View release</a>
     ·
     <a href="https://github.com/RyanSSER/RyanPurge/issues">Report an issue</a>
   </p>
@@ -30,7 +30,7 @@ Install RyanPurge directly from the official repository:
 https://ryansser.github.io/RyanPurge/
 ```
 
-In Revenge versions that support plugin repositories, add the repository URL and install **RyanPurge 1.0.16**. If the + button asks for a direct plugin URL instead, use `https://ryansser.github.io/RyanPurge/index.js`. Use only the official RyanOS repository; unofficial mirrors, modified builds, and rebranded packages are not supported.
+In Revenge versions that support plugin repositories, add the repository URL and install **RyanPurge 1.0.17**. If the + button asks for a direct plugin URL instead, use `https://ryansser.github.io/RyanPurge/index.js`. Use only the official RyanOS repository; unofficial mirrors, modified builds, and rebranded packages are not supported.
 
 ## Source code
 
@@ -50,7 +50,7 @@ Discord and the host application may change internal behavior, permissions, mess
 
 ## Official release
 
-The current official release is **RyanPurge 1.0.16**. The exact package and release notes are available on the [GitHub release page](https://github.com/RyanSSER/RyanPurge/releases/tag/v1.0.16).
+The current official release is **RyanPurge 1.0.17**. The exact package and release notes are available on the [GitHub release page](https://github.com/RyanSSER/RyanPurge/releases/tag/v1.0.17).
 
 ## Suggestions and contact
 

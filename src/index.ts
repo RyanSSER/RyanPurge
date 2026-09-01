@@ -1447,7 +1447,9 @@ async function requestAuthorSearchHistory(job: CleanupJob) {
     const rules = job.options.deletionRules;
     job.authorSearchStartedAt = now();
     const minId = rules.dateMode === "after" || rules.dateMode === "range" ? snowflakeFromTimestamp(Number(rules.dateAfter)) : undefined;
-    const maxId = rules.dateMode === "before" || rules.dateMode === "range" ? snowflakeFromTimestamp(Number(rules.dateBefore)) : snowflakeFromTimestamp(now() + 60_000);
+    const dateMaxId = rules.dateMode === "before" || rules.dateMode === "range" ? snowflakeFromTimestamp(Number(rules.dateBefore)) : snowflakeFromTimestamp(now() + 60_000);
+    const cursorMaxId = job.historyCursor ? String(job.historyCursor) : undefined;
+    const maxId = dateMaxId && cursorMaxId ? (snowflakeAsBigInt(cursorMaxId) < snowflakeAsBigInt(dateMaxId) ? cursorMaxId : dateMaxId) : cursorMaxId || dateMaxId;
     const messages = await collectAuthorSearchWindow(api, guildId, job, { ...(minId ? { minId } : {}), ...(maxId ? { maxId } : {}) }, 0);
     if (!messages) return { requested: false, complete: false, messages: [] as any[] };
     return { requested: true, complete: true, messages: uniqueChannelMessages(messages, job.channelId) };
@@ -1555,7 +1557,7 @@ function initializeOwnerCursor(job: CleanupJob) {
     if (!latestOwn?.id) return false;
     job.historyCursor = String(latestOwn.id);
     job.historyStarted = true;
-    job.authorSearchEscalated = true;
+    job.authorSearchEscalated = false;
     job.historyOwnerFound = true;
     audit(job, "owner-cursor-jump", "Started history before the latest loaded message belonging to the current user", String(latestOwn.id));
     return true;
@@ -2030,7 +2032,7 @@ async function runCleanup(job: CleanupJob, closeSheet?: () => void, onComplete?:
                 emptyPages = 0;
                 job.historyNoProgress = 0;
                 const oldestLoaded = loadedBefore[0]?.id;
-                if (oldestLoaded && !hadHistoryBatch) job.historyCursor = String(oldestLoaded);
+                if (oldestLoaded && !hadHistoryBatch && !job.historyCursor) job.historyCursor = String(oldestLoaded);
                 let processedCandidates = 0;
                 for (const message of candidates) {
                     if (!executionCanContinue(job, executionId) || job.stats.deleted >= job.options.maxPerRun) break;
@@ -2133,7 +2135,7 @@ async function runCleanup(job: CleanupJob, closeSheet?: () => void, onComplete?:
                 audit(job, "history-early-stop", "Stopped history pagination after crossing the selected lower date boundary");
             }
             job.historyLastPageSignature = afterSignature;
-            if (!isDirectMessageJob(job) && !job.authorSearchEscalated && !job.authorSearchUnsupported && !job.historyOwnerFound && Number(job.historyOwnerMissPages || 0) >= 3) {
+            if (!isDirectMessageJob(job) && !job.authorSearchUnsupported && !job.historyOwnerFound && Number(job.historyOwnerMissPages || 0) >= 3) {
                 job.authorSearchEscalated = true;
                 audit(job, "author-search-escalation", "Three consecutive history pages had no messages from the current user; switching to indexed author search");
                 const targeted = await requestAuthorSearchHistory(job);
