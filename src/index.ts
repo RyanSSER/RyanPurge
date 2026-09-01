@@ -140,12 +140,14 @@ type CleanupJob = {
     cursor?: string;
     historyCursor?: string;
     historyNoProgress?: number;
+    historyOwnerMissPages?: number;
     historyLastPageSignature?: string;
     historyHasMore?: boolean;
     historyStarted?: boolean;
     historyBatch?: any[];
     historyLastRequestAt?: number;
     historyRestDisabled?: boolean;
+    authorSearchEscalated?: boolean;
     seenIds: string[];
     deletedIds?: string[];
     resumePoint?: string;
@@ -634,7 +636,7 @@ function loadJob(): CleanupJob | undefined {
         const candidate = readAtomicPayload(target, "job_v5") || target?.job;
         if ((candidate?.schema === 3 || candidate?.schema === 4 || candidate?.schema === 5) && candidate?.channelId && candidate?.ownerId && candidate?.stats && Array.isArray(candidate.seenIds)) {
             const job = candidate as CleanupJob;
-            const normalized: CleanupJob = { ...job, schema: 5, historyCursor: job.historyCursor || undefined, historyNoProgress: Number(job.historyNoProgress || 0), historyLastPageSignature: job.historyLastPageSignature || undefined, historyHasMore: typeof job.historyHasMore === "boolean" ? job.historyHasMore : undefined, historyStarted: Boolean(job.historyStarted || job.historyCursor || job.stats.historyPages), recentOnly: Boolean(job.recentOnly), recentFrontierId: job.recentFrontierId || undefined, recentFrontierReached: Boolean(job.recentFrontierReached), options: { ...defaultSettings(), ...(job.options || {}), deepHistory: true, previewRequired: false, autoResume: true }, stats: { ...job.stats, pausedMs: Math.max(0, Number(job.stats.pausedMs) || 0), pausedAt: Number(job.stats.pausedAt) > 0 ? Number(job.stats.pausedAt) : undefined }, progressHistory: normalizeProgressHistory(job.progressHistory) };
+            const normalized: CleanupJob = { ...job, schema: 5, historyCursor: job.historyCursor || undefined, historyNoProgress: Number(job.historyNoProgress || 0), historyOwnerMissPages: Number(job.historyOwnerMissPages || 0), historyLastPageSignature: job.historyLastPageSignature || undefined, historyHasMore: typeof job.historyHasMore === "boolean" ? job.historyHasMore : undefined, historyStarted: Boolean(job.historyStarted || job.historyCursor || job.stats.historyPages), recentOnly: Boolean(job.recentOnly), recentFrontierId: job.recentFrontierId || undefined, recentFrontierReached: Boolean(job.recentFrontierReached), options: { ...defaultSettings(), ...(job.options || {}), deepHistory: true, previewRequired: false, autoResume: true }, stats: { ...job.stats, pausedMs: Math.max(0, Number(job.stats.pausedMs) || 0), pausedAt: Number(job.stats.pausedAt) > 0 ? Number(job.stats.pausedAt) : undefined }, progressHistory: normalizeProgressHistory(job.progressHistory) };
             // A persisted "running" flag can survive a force-stop or Discord restart. It must
             // never lock the UI or make destructive controls appear active after reload.
             if (normalized.stats.completion === "running" || normalized.active) {
@@ -1087,7 +1089,7 @@ function recordProgressPoint(job: CleanupJob) {
 
 function defaultJob(channelId: string, ownerId: string): CleanupJob {
     const settings = cloneJson(loadSettings());
-    const job: CleanupJob = { schema: 5, active: true, channelId, ownerId, startedAt: now(), cursor: undefined, historyCursor: undefined, historyNoProgress: 0, historyLastPageSignature: undefined, historyHasMore: undefined, historyStarted: false, historyBatch: [], historyLastRequestAt: 0, historyRestDisabled: false, seenIds: [], deletedIds: [], resumePoint: undefined, pendingDelete: undefined, snapshot: snapshotSettings(settings, channelId, ownerId), consecutiveErrors: 0, consecutiveRateLimits: 0, unexpectedResponses: 0, circuitOpen: false, circuitReason: undefined, auditLog: [], options: settings, stats: createStats(), progressHistory: [], checkpointSeeded: false, checkpointLatestPrimed: false, recentOnly: false, recentFrontierId: undefined, recentFrontierReached: false };
+    const job: CleanupJob = { schema: 5, active: true, channelId, ownerId, startedAt: now(), cursor: undefined, historyCursor: undefined, historyNoProgress: 0, historyOwnerMissPages: 0, historyLastPageSignature: undefined, historyHasMore: undefined, historyStarted: false, historyBatch: [], historyLastRequestAt: 0, historyRestDisabled: false, authorSearchEscalated: false, seenIds: [], deletedIds: [], resumePoint: undefined, pendingDelete: undefined, snapshot: snapshotSettings(settings, channelId, ownerId), consecutiveErrors: 0, consecutiveRateLimits: 0, unexpectedResponses: 0, circuitOpen: false, circuitReason: undefined, auditLog: [], options: settings, stats: createStats(), progressHistory: [], checkpointSeeded: false, checkpointLatestPrimed: false, recentOnly: false, recentFrontierId: undefined, recentFrontierReached: false };
     audit(job, "job-start", "Captured fixed target, account, rules, and limits");
     return job;
 }
@@ -2010,7 +2012,16 @@ async function runCleanup(job: CleanupJob, closeSheet?: () => void, onComplete?:
             job.stats.historyPages += 1;
             await sleep(HISTORY_SETTLE_MS);
             const afterMessages = loadedChannelMessages(job.channelId);
+            const beforeIds = new Set(beforeMessages.map((message) => String(message?.id || "")).filter(Boolean));
+            const newlyLoadedMessages = afterMessages.filter((message) => !beforeIds.has(String(message?.id || "")));
             const pageMessages = uniqueChannelMessages((page.messages || []).concat(afterMessages), job.channelId);
+            const currentPageMessages = uniqueChannelMessages((page.messages || []).concat(newlyLoadedMessages), job.channelId);
+            const ownerMessagesInPage = currentPageMessages.filter((message) => messageAuthorId(message) === String(job.ownerId));
+            if (!isDirectMessageJob(job) && !job.authorSearchEscalated && ownerMessagesInPage.length === 0) {
+                job.historyOwnerMissPages = Math.max(0, Number(job.historyOwnerMissPages || 0)) + 1;
+            } else if (ownerMessagesInPage.length > 0) {
+                job.historyOwnerMissPages = 0;
+            }
             const afterSignature = messageSignature(afterMessages);
             const added = Math.max(page.messages.length ? countNewMessages(beforeMessages, page.messages) : 0, countNewMessages(beforeMessages, afterMessages));
             const progressed = added > 0 || afterSignature !== beforeSignature || page.messages.length > 0;
@@ -2031,6 +2042,23 @@ async function runCleanup(job: CleanupJob, closeSheet?: () => void, onComplete?:
                 audit(job, "history-early-stop", "Stopped history pagination after crossing the selected lower date boundary");
             }
             job.historyLastPageSignature = afterSignature;
+            if (!isDirectMessageJob(job) && !job.authorSearchEscalated && Number(job.historyOwnerMissPages || 0) >= 3) {
+                job.authorSearchEscalated = true;
+                audit(job, "author-search-escalation", "Three consecutive history pages had no messages from the current user; switching to indexed author search");
+                const targeted = await requestAuthorSearchHistory(job);
+                if (targeted.requested && targeted.complete) {
+                    job.historyBatch = targeted.messages;
+                    job.historyHasMore = false;
+                    job.historyStarted = true;
+                    job.historyCursor = targeted.messages[0]?.id || job.historyCursor;
+                    job.historyOwnerMissPages = 0;
+                    audit(job, "author-search-complete", `Indexed author search returned ${targeted.messages.length} messages for this channel`);
+                    saveJob(job);
+                    onProgress?.(job);
+                    continue;
+                }
+                audit(job, "author-search-fallback", "Indexed author search was unavailable; continuing with guarded history pagination");
+            }
             if (isDirectMessageJob(job)) saveDMCheckpoint(job, pageMessages);
             recordProgressPoint(job);
             saveJob(job);
