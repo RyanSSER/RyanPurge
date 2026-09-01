@@ -30,7 +30,7 @@ Install RyanPurge directly from the official repository:
 https://ryansser.github.io/RyanPurge/
 ```
 
-Open the link in Revenge, add the repository, and install **RyanPurge 1.0.1**. Use only the official RyanOS repository; unofficial mirrors, modified builds, and rebranded packages are not supported.
+In Revenge versions that support plugin repositories, add the repository URL and install **RyanPurge 1.0.1**. If the + button asks for a direct plugin URL instead, use `https://ryansser.github.io/RyanPurge/index.js`. Use only the official RyanOS repository; unofficial mirrors, modified builds, and rebranded packages are not supported.
 
 ## Source code
 
