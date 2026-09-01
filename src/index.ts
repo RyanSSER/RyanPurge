@@ -221,9 +221,9 @@ type HistoryEntry = {
 };
 
 const PATCHES: Array<() => void> = [];
-const STORAGE_KEY = "deep-personal-message-cleanup-v3";
-const DM_CHECKPOINTS_KEY = "dm_checkpoints_v1";
-const PREVIEW_PLAN_KEY = "ryanpurge_preview_plan_v1";
+const STORAGE_KEY = "ryanpurge-storage-v4";
+const DM_CHECKPOINTS_KEY = "dm_checkpoints_v2";
+const PREVIEW_PLAN_KEY = "ryanpurge_preview_plan_v2";
 const PREVIEW_BUDGET_MS = 30_000;
 const PREVIEW_MAX_PAGES = 25;
 const PREVIEW_EXPIRY_MS = 30 * 60 * 1000;
@@ -635,6 +635,15 @@ function loadJob(): CleanupJob | undefined {
         if ((candidate?.schema === 3 || candidate?.schema === 4 || candidate?.schema === 5) && candidate?.channelId && candidate?.ownerId && candidate?.stats && Array.isArray(candidate.seenIds)) {
             const job = candidate as CleanupJob;
             const normalized: CleanupJob = { ...job, schema: 5, historyCursor: job.historyCursor || undefined, historyNoProgress: Number(job.historyNoProgress || 0), historyLastPageSignature: job.historyLastPageSignature || undefined, historyHasMore: typeof job.historyHasMore === "boolean" ? job.historyHasMore : undefined, historyStarted: Boolean(job.historyStarted || job.historyCursor || job.stats.historyPages), recentOnly: Boolean(job.recentOnly), recentFrontierId: job.recentFrontierId || undefined, recentFrontierReached: Boolean(job.recentFrontierReached), options: { ...defaultSettings(), ...(job.options || {}), deepHistory: true, previewRequired: false, autoResume: true }, stats: { ...job.stats, pausedMs: Math.max(0, Number(job.stats.pausedMs) || 0), pausedAt: Number(job.stats.pausedAt) > 0 ? Number(job.stats.pausedAt) : undefined }, progressHistory: normalizeProgressHistory(job.progressHistory) };
+            // A persisted "running" flag can survive a force-stop or Discord restart. It must
+            // never lock the UI or make destructive controls appear active after reload.
+            if (normalized.stats.completion === "running" || normalized.active) {
+                normalized.active = false;
+                normalized.stats.completion = "paused";
+                normalized.stats.pausedAt = normalized.stats.pausedAt || now();
+                normalized.stats.endedAt = undefined;
+                audit(normalized, "stale-runtime-recovered", "Recovered a persisted running job as paused after plugin reload");
+            }
             ensureSafetyFields(normalized);
             return normalized;
         }
@@ -2331,7 +2340,7 @@ function settingsComponent() {
     const Image = RN.Image;
     const Scroll = RN.ScrollView || View;
     const SafeArea = RN.SafeAreaView || View;
-    const pressableType = RN.TouchableOpacity || RN.Pressable || RN.TouchableHighlight || View;
+    const pressableType = RN.Pressable || RN.TouchableOpacity || RN.TouchableHighlight || View;
     const modalType = RN.Modal || View;
     const inputType = RN.TextInput || View;
     const sliderType = RN.Slider || findByProps("Slider")?.Slider || View;
@@ -2608,7 +2617,7 @@ function settingsComponent() {
     const targetName = liveTargetLabel || storedTargetLabel || (targetId ? (language === "ar" ? "الهدف المحدد" : "Selected target") : t("noTarget"));
     const targetDisplayName = targetName.replace(/^RyanPurge\s*[-–—:]\s*/i, "").trim() || targetName;
     const targetDisplayText = language === "ar" ? `\u2067${t("target")}: \u2066${targetDisplayName}\u2069\u2069` : `${t("target")}: ${targetDisplayName}`;
-    const isRunning = Boolean(savedJob?.active || running || stats?.completion === "running");
+    const isRunning = Boolean(running && currentJob?.active && currentJob?.stats?.completion === "running");
     const canResume = Boolean(savedJob?.stats?.completion === "paused" && savedJob?.channelId === targetId);
     const elapsed = stats ? formatDuration(activeElapsedMs(stats)) : "0s";
     const statusColor = stats?.completion === "stopped" ? colors.red : colors.accent;
@@ -2634,7 +2643,7 @@ function settingsComponent() {
         setSettings(next);
     };
     const openDialog = (title: string, body: string, onConfirm?: () => void, confirmLabel = t("continue"), color = colors.accent) => setDialog({ title, body, onConfirm, confirmLabel, cancelLabel: t("cancel"), color });
-    const pressProps = (onPress: () => void, style: any = {}) => { const directionalStyle = { direction: "ltr", ...style }; return pressableType === View ? { style: directionalStyle, onStartShouldSetResponder: () => true, onResponderRelease: onPress, accessibilityRole: "button" } : { style: directionalStyle, onPress, activeOpacity: 0.72, accessibilityRole: "button" }; };
+    const pressProps = (onPress: () => void, style: any = {}) => { const directionalStyle = { direction: "ltr", ...style }; return pressableType === View ? { style: directionalStyle, onStartShouldSetResponder: () => true, onResponderRelease: onPress, accessibilityRole: "button" } : { style: directionalStyle, onPress, onClick: onPress, activeOpacity: 0.72, accessible: true, accessibilityRole: "button" }; };
     const ensureTarget = () => {
         if (!settings.targetChannelId) { openDialog(t("target"), t("noTargetAlert"), undefined, t("close"), colors.red); return false; }
         return true;
@@ -3225,6 +3234,7 @@ export const onLoad = () => {
     stopRequested = false;
     clearRequested = false;
     currentJob = loadJob();
+    if (currentJob?.stats?.completion === "paused" && currentJob.stats.pausedAt) saveJob(currentJob);
     unpatchSidebar?.();
     unpatchSidebar = patchSidebar();
 };

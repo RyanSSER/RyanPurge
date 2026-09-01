@@ -1,16 +1,19 @@
 {
+  "format": 1,
   "id": "com.ryanpurge",
-  "spec": 3,
-  "version": "1.0.0",
-  "type": "plugin",
-  "display": {
-    "name": "RyanPurge",
-    "description": "Safely delete only your own Discord messages in the selected DM or channel, with preview, filters, resume, pacing, and reports.",
-    "authors": [
-      {
-        "name": "RyanOS"
-      }
-    ]
+  "name": "RyanPurge",
+  "description": "Safely delete only your own Discord messages in the selected DM or channel, with preview, filters, resume, pacing, and reports.",
+  "author": "RyanOS",
+  "version": "1.0.1",
+  "dependencies": {
+    "revenge.api": {
+      "version": ">=1 <2"
+    },
+    "discord": {
+      "version": "*"
+    }
   },
-  "main": "index.js"
+  "dist": {
+    "script": "index.js"
+  }
 }
