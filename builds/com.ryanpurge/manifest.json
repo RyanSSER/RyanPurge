@@ -2,9 +2,9 @@
   "format": 1,
   "id": "com.ryanpurge",
   "name": "RyanPurge",
-  "description": "Safely find and delete only your own Discord messages with channel-compatible history scanning, rate-limit recovery, complete data reset, and cache-safe updates.",
+  "description": "Safely find and delete only your own Discord messages with channel-compatible history scanning, rate-limit recovery, complete data reset, and visible version verification.",
   "author": "RyanOS",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "dependencies": {
     "revenge.api": {
       "version": ">=1 <2"
