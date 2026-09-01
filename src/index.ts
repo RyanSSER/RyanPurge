@@ -1547,6 +1547,18 @@ function isDirectMessageJob(job: CleanupJob) {
     return job.snapshot?.targetKind === "dm" || job.options.target?.kind === "dm";
 }
 
+function initializeOwnerCursor(job: CleanupJob) {
+    if (isDirectMessageJob(job) || job.historyStarted || job.historyCursor) return false;
+    const latestOwn = visibleOwnMessages(job.channelId, job.ownerId, job).sort((a, b) => snowflakeAsBigInt(String(b.id)) > snowflakeAsBigInt(String(a.id)) ? 1 : -1)[0];
+    if (!latestOwn?.id) return false;
+    job.historyCursor = String(latestOwn.id);
+    job.historyStarted = true;
+    job.authorSearchEscalated = true;
+    job.historyOwnerFound = true;
+    audit(job, "owner-cursor-jump", "Started history before the latest loaded message belonging to the current user", String(latestOwn.id));
+    return true;
+}
+
 function initializeHistoricalCursor(job: CleanupJob) {
     if (!isDirectMessageJob(job) || job.historyStarted || job.historyCursor) return false;
     const rules = job.snapshot?.rules || job.options.deletionRules;
@@ -1977,10 +1989,10 @@ async function runCleanup(job: CleanupJob, closeSheet?: () => void, onComplete?:
     saveJob(job);
 
     try {
-        // Run indexed author search at most once per job. If it is unavailable or rate-limited,
-        // do not trigger the same expensive request again after three history pages.
-        if (!isDirectMessageJob(job)) job.authorSearchEscalated = true;
-        const authorSearch = await withTimeout(requestAuthorSearchHistory(job), AUTHOR_SEARCH_BUDGET_MS + 5_000);
+        const ownerCursorJumped = initializeOwnerCursor(job);
+        if (!ownerCursorJumped && !isDirectMessageJob(job)) job.authorSearchEscalated = true;
+        if (!ownerCursorJumped) {
+            const authorSearch = await withTimeout(requestAuthorSearchHistory(job), AUTHOR_SEARCH_BUDGET_MS + 5_000);
         if (authorSearch.requested && authorSearch.complete) {
             job.historyBatch = authorSearch.messages;
             job.historyHasMore = false;
@@ -1988,6 +2000,7 @@ async function runCleanup(job: CleanupJob, closeSheet?: () => void, onComplete?:
             job.historyCursor = authorSearch.messages[0]?.id || job.historyCursor;
             saveJob(job);
             onProgress?.(job);
+        }
         }
     } catch (error) {
         job.stats.lastError = `Author search fallback: ${safeError(error)}`;
