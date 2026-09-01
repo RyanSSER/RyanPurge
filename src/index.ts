@@ -148,6 +148,7 @@ type CleanupJob = {
     historyLastRequestAt?: number;
     historyRestDisabled?: boolean;
     authorSearchEscalated?: boolean;
+    authorSearchUnsupported?: boolean;
     authorSearchStartedAt?: number;
     authorSearchEscalationFailed?: boolean;
     seenIds: string[];
@@ -365,6 +366,15 @@ function retryAfterMs(error: unknown) {
     return 0;
 }
 
+function isAuthorSearchUnsupportedError(error: unknown) {
+    try {
+        const source: any = error as any;
+        const body = source?.body ?? source?.data ?? source?.response?.data;
+        return Number(source?.code ?? body?.code ?? source?.response?.data?.code) === 50024;
+    } catch {
+        return false;
+    }
+}
 function isRateLimitError(error: unknown) {
     try {
         const source: any = error as any;
@@ -1340,6 +1350,13 @@ async function searchAuthorWindow(api: any, guildId: string | undefined, job: Cl
             await reserveAuthorSearchRequest(job);
             response = await requestAuthorSearchPage(api, guildId, job, offset, window);
                 } catch (error) {
+            if (isAuthorSearchUnsupportedError(error)) {
+                job.authorSearchUnsupported = true;
+                job.stats.lastError = "Discord does not support indexed message search for this channel type; using guarded history pagination.";
+                audit(job, "author-search-unsupported", job.stats.lastError);
+                saveJob(job);
+                return { requested: false, tooLarge: false, messages: [] as any[] };
+            }
             if (isRateLimitError(error) && rateLimitRetries < 3) {
                 rateLimitRetries += 1;
                 const retryDelay = Math.min(15_000, Math.max(1_250, retryAfterMs(error) + 250));
@@ -2086,7 +2103,7 @@ async function runCleanup(job: CleanupJob, closeSheet?: () => void, onComplete?:
                 audit(job, "history-early-stop", "Stopped history pagination after crossing the selected lower date boundary");
             }
             job.historyLastPageSignature = afterSignature;
-            if (!isDirectMessageJob(job) && !job.authorSearchEscalated && Number(job.historyOwnerMissPages || 0) >= 3) {
+            if (!isDirectMessageJob(job) && !job.authorSearchEscalated && !job.authorSearchUnsupported && Number(job.historyOwnerMissPages || 0) >= 3) {
                 job.authorSearchEscalated = true;
                 audit(job, "author-search-escalation", "Three consecutive history pages had no messages from the current user; switching to indexed author search");
                 const targeted = await requestAuthorSearchHistory(job);
@@ -2101,13 +2118,20 @@ async function runCleanup(job: CleanupJob, closeSheet?: () => void, onComplete?:
                     onProgress?.(job);
                     continue;
                 }
-                job.authorSearchEscalationFailed = true;
-                job.historyHasMore = false;
-                job.stats.lastError = "Indexed author search is unavailable in this Revenge build; stopped before scanning more public-channel history.";
-                audit(job, "author-search-fallback", job.stats.lastError);
-                saveJob(job);
-                onProgress?.(job);
-                break;
+                if (job.authorSearchUnsupported) {
+                    job.historyOwnerMissPages = 0;
+                    audit(job, "history-pagination-fallback", "Indexed search is not supported for this channel type; continuing guarded history pagination");
+                    saveJob(job);
+                    onProgress?.(job);
+                } else {
+                    job.authorSearchEscalationFailed = true;
+                    job.historyHasMore = false;
+                    job.stats.lastError = "Indexed author search is unavailable in this Revenge build; stopped before scanning more public-channel history.";
+                    audit(job, "author-search-fallback", job.stats.lastError);
+                    saveJob(job);
+                    onProgress?.(job);
+                    break;
+                }
             }
             if (isDirectMessageJob(job)) saveDMCheckpoint(job, pageMessages);
             recordProgressPoint(job);
