@@ -2,9 +2,9 @@
   "format": 1,
   "id": "com.ryanpurge",
   "name": "RyanPurge",
-  "description": "Safely find and delete only your own Discord messages with indexed author search, rate-limit recovery, and automatic history jumping.",
+  "description": "Safely find and delete only your own Discord messages with indexed author search, rate-limit recovery, and complete data reset.",
   "author": "RyanOS",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "dependencies": {
     "revenge.api": {
       "version": ">=1 <2"

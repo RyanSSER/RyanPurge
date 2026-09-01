@@ -226,6 +226,7 @@ type HistoryEntry = {
 
 const PATCHES: Array<() => void> = [];
 const STORAGE_KEY = "ryanpurge-storage-v4";
+const LEGACY_STORAGE_KEYS = ["deep-personal-message-cleanup-v3"];
 const DM_CHECKPOINTS_KEY = "dm_checkpoints_v2";
 const PREVIEW_PLAN_KEY = "ryanpurge_preview_plan_v2";
 const PREVIEW_BUDGET_MS = 30_000;
@@ -784,14 +785,37 @@ function finalizeCompletedJob() {
     }
 }
 
-function clearHistory() {
-    try {
-        const target = getStore();
-        if (target) target.history = [];
-        return;
-    } catch {
-        return;
+function clearStorageScope(target: any) {
+    if (!target) return;
+    const keys = ["settings", "history", "job", "job_v5", "job_v5_a", "job_v5_b", "job_v5_active", DM_CHECKPOINTS_KEY, `${DM_CHECKPOINTS_KEY}_a`, `${DM_CHECKPOINTS_KEY}_b`, `${DM_CHECKPOINTS_KEY}_active`, PREVIEW_PLAN_KEY, `${PREVIEW_PLAN_KEY}_a`, `${PREVIEW_PLAN_KEY}_b`, `${PREVIEW_PLAN_KEY}_active`, "job_v4", "job_v4_a", "job_v4_b", "job_v4_active", "job_v3", "job_v3_a", "job_v3_b", "job_v3_active", "history_v1", "history_v2"];
+    for (const key of keys) {
+        try { target[key] = undefined; } catch {}
+        try { delete target[key]; } catch {}
     }
+}
+function clearAllPluginData() {
+    try {
+        clearStorageScope(getStore());
+        const storage = (globalThis as any).vendetta?.storage;
+        if (storage?.createMMKVBackend && storage?.createStorage && storage?.wrapSync) {
+            for (const legacyKey of LEGACY_STORAGE_KEYS) {
+                try { clearStorageScope(storage.wrapSync(storage.createStorage(storage.createMMKVBackend(legacyKey)))); } catch {}
+            }
+        }
+    } catch {
+        // Data cleanup is best-effort across Revenge storage implementations.
+    }
+    currentJob = undefined;
+    running = false;
+    cancelled = true;
+    pauseRequested = false;
+    stopRequested = false;
+    clearRequested = false;
+    globalDeleteNextAt = 0;
+    globalDeleteBlockedUntil = 0;
+}
+function clearHistory() {
+    clearAllPluginData();
 }
 
 function messageChannelId(message: any): string {
@@ -2523,8 +2547,8 @@ function settingsComponent() {
         keepOpen: "خلي Discord مفتوح. إذا أندرويد أوقف التطبيق، افتح نفس الـDM واختار استئناف.",
 
         reports: "التقارير والسجل",
-        clearHistory: "مسح سجل الجلسات",
-        clearHistoryHint: "ينمسح سجل التقارير فقط؛ الرسائل ما تتأثر.",
+        clearHistory: "مسح كل بيانات البلوقن",
+        clearHistoryHint: "ينمسح كلشي: الإعدادات، الجلسات، الإحصائيات، المعاينات وبيانات الاستئناف. الرسائل ما تتأثر.",
         currentReport: "التقرير الحالي",
         history: "سجل الجلسات",
         language: "اللغة",
@@ -2653,8 +2677,8 @@ function settingsComponent() {
         keepOpen: "Keep Discord open. If Android stops the app, open the same DM and choose Resume.",
 
         reports: "Reports and history",
-        clearHistory: "Clear session history",
-        clearHistoryHint: "Only saved reports are removed; messages are unaffected.",
+        clearHistory: "Clear all plugin data",
+        clearHistoryHint: "This removes settings, jobs, checkpoints, previews, reports, and statistics. Messages are unaffected.",
         currentReport: "Current report",
         history: "Session history",
         language: "Language",
@@ -2956,7 +2980,7 @@ function settingsComponent() {
     const reportCard = section(t("reports"), [
         row(t("currentReport"), language === "ar" ? "إحصائيات المهمة الحالية أو الأخيرة" : "Current or last job statistics", stats ? statusLabel : t("empty"), colors.accent, showReport, "report"),
         row(t("history"), language === "ar" ? "آخر الجلسات المحفوظة" : "Latest saved sessions", `${loadHistory().length}`, colors.accent, showHistory, "history"),
-        row(t("clearHistory"), t("clearHistoryHint"), `${loadHistory().length} ${t("historyCount")}`, colors.red, () => openDialog(t("clearHistory"), t("clearHistoryHint"), () => { clearHistory(); setDialog(null); setRefresh((value: number) => value + 1); }, t("clearHistory"), colors.red), "clear-history"),
+        row(t("clearHistory"), t("clearHistoryHint"), `${loadHistory().length} ${t("historyCount")}`, colors.red, () => openDialog(t("clearHistory"), t("clearHistoryHint"), () => { clearAllPluginData(); setDialog(null); setRefresh((value: number) => value + 1); }, t("clearHistory"), colors.red), "clear-history"),
     ], "reports");
     const currentReportText = savedJob ? reportText(savedJob) : "";
     const auditEntries = savedJob && Array.isArray(savedJob.auditLog) ? savedJob.auditLog.slice(-24) : [];
