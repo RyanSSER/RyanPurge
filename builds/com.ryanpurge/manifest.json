@@ -4,7 +4,7 @@
   "name": "RyanPurge",
   "description": "Safely find and delete only your own Discord messages with indexed author search and automatic history jumping.",
   "author": "RyanOS",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "dependencies": {
     "revenge.api": {
       "version": ">=1 <2"

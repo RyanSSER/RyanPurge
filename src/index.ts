@@ -148,6 +148,8 @@ type CleanupJob = {
     historyLastRequestAt?: number;
     historyRestDisabled?: boolean;
     authorSearchEscalated?: boolean;
+    authorSearchStartedAt?: number;
+    authorSearchEscalationFailed?: boolean;
     seenIds: string[];
     deletedIds?: string[];
     resumePoint?: string;
@@ -249,6 +251,8 @@ const AUTHOR_SEARCH_INDEX_RETRIES = 3;
 const AUTHOR_SEARCH_MAX_SPLIT_DEPTH = 24;
 const AUTHOR_SEARCH_WORKERS = 2;
 const AUTHOR_SEARCH_GAP_MS = 350;
+const AUTHOR_SEARCH_TIMEOUT_MS = 5_000;
+const AUTHOR_SEARCH_BUDGET_MS = 20_000;
 const MAX_SEEN_IDS = 200_000;
 const MAX_HISTORY_ENTRIES = 12;
 const MAX_AUDIT_ENTRIES = 240;
@@ -441,10 +445,15 @@ function withGlobalDeleteRateLimiter<T>(job: CleanupJob, task: () => Promise<T>,
 
 function safeError(error: unknown) {
     try {
-        if (error && typeof (error as any).message === "string" && (error as any).message) return String((error as any).message).slice(0, 180);
-        if (typeof error === "string" && error) return error.slice(0, 180);
+        const source: any = error as any;
+        const status = source?.status ?? source?.statusCode ?? source?.response?.status;
+        const body = source?.body ?? source?.data ?? source?.response?.data;
+        const detail = body && typeof body === "object" ? JSON.stringify(body) : body ? String(body) : "";
+        if (status || detail) return `${status ? `HTTP ${status}` : "REST error"}${detail ? `: ${detail}` : ""}`.slice(0, 240);
+        if (error && typeof source?.message === "string" && source.message) return String(source.message).slice(0, 240);
+        if (typeof error === "string" && error) return error.slice(0, 240);
         const serialized = error && typeof error === "object" ? JSON.stringify(error) : String(error || "");
-        return (serialized && serialized !== "{}" ? serialized : "Unknown error").slice(0, 180);
+        return (serialized && serialized !== "{}" ? serialized : "Unknown error").slice(0, 240);
     } catch {
         return "Unknown error";
     }
@@ -1159,23 +1168,19 @@ function findRestApi() {
     }
 }
 
-async function restGet(api: any, url: string, query: any): Promise<any> {
-    const encoded = Object.entries(query || {}).filter(([, value]) => value !== undefined && value !== null && value !== "").map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`).join("&");
-    const urlWithQuery = encoded ? `${url}?${encoded}` : url;
-    const calls: Array<() => Promise<any>> = [
-        () => Promise.resolve(api.get({ url, query })),
-        () => Promise.resolve(api.get(url, query)),
-        () => Promise.resolve(api.get(urlWithQuery)),
-    ];
-    let firstError: unknown;
-    for (const call of calls) {
-        try {
-            return await withTimeout(call(), HISTORY_REQUEST_TIMEOUT_MS);
-        } catch (error) {
-            firstError ||= error;
-        }
+async function restGet(api: any, url: string, query: any, timeoutMs = HISTORY_REQUEST_TIMEOUT_MS): Promise<any> {
+    const read = async (call: Promise<any>) => {
+        const response = await withTimeout(call, timeoutMs);
+        if (response?.ok === false || response?.response?.ok === false) throw response;
+        return response;
+    };
+    try {
+        return await read(Promise.resolve(api.get({ url, query })));
+    } catch (error: any) {
+        const httpFailure = error?.ok === false || Number(error?.status || error?.statusCode) >= 400 || error?.response?.ok === false;
+        if (httpFailure) throw error;
+        return await read(Promise.resolve(api.get(url, query)));
     }
-    throw firstError || new Error("REST GET failed");
 }
 function channelGuildId(channelId: string): string | undefined {
     try {
@@ -1287,11 +1292,11 @@ function authorSearchQuery(job: CleanupJob, offset: number, window: AuthorSearch
 
 async function requestAuthorSearchPage(api: any, guildId: string | undefined, job: CleanupJob, offset: number, window: AuthorSearchWindow) {
     const query = authorSearchQuery(job, offset, window);
-    const paths = guildId ? [`/guilds/${guildId}/messages/search`, `/channels/${job.channelId}/messages/search`] : [`/channels/${job.channelId}/messages/search`];
+    const paths = guildId ? [`/channels/${job.channelId}/messages/search`, `/guilds/${guildId}/messages/search`] : [`/channels/${job.channelId}/messages/search`];
     let firstError: unknown;
     for (const path of paths) {
         try {
-            return await restGet(api, path, query);
+            return await restGet(api, path, query, AUTHOR_SEARCH_TIMEOUT_MS);
         } catch (error) {
             firstError ||= error;
         }
@@ -1303,7 +1308,7 @@ async function searchAuthorWindow(api: any, guildId: string | undefined, job: Cl
     let totalResults: number | undefined;
     let collected: any[] = [];
     let indexRetries = 0;
-    while (offset <= AUTHOR_SEARCH_MAX_OFFSET && !cancelled) {
+    while (offset <= AUTHOR_SEARCH_MAX_OFFSET && !cancelled && now() - Number(job.authorSearchStartedAt || now()) < AUTHOR_SEARCH_BUDGET_MS) {
         let response: any;
         try {
             await reserveAuthorSearchRequest(job);
@@ -1353,6 +1358,7 @@ async function searchAuthorWindow(api: any, guildId: string | undefined, job: Cl
 }
 
 async function collectAuthorSearchWindow(api: any, guildId: string, job: CleanupJob, window: AuthorSearchWindow, depth: number): Promise<any[] | undefined> {
+    if (now() - Number(job.authorSearchStartedAt || now()) >= AUTHOR_SEARCH_BUDGET_MS) return undefined;
     const result = await withAuthorSearchWorker(() => searchAuthorWindow(api, guildId, job, window));
     if (!result.requested) return undefined;
     if (!result.tooLarge) return result.messages;
@@ -1373,6 +1379,7 @@ async function requestAuthorSearchHistory(job: CleanupJob) {
     const guildId = channelGuildId(job.channelId);
     if (!api) return { requested: false, complete: false, messages: [] as any[] };
     const rules = job.options.deletionRules;
+    job.authorSearchStartedAt = now();
     const minId = rules.dateMode === "after" || rules.dateMode === "range" ? snowflakeFromTimestamp(Number(rules.dateAfter)) : undefined;
     const maxId = rules.dateMode === "before" || rules.dateMode === "range" ? snowflakeFromTimestamp(Number(rules.dateBefore)) : snowflakeFromTimestamp(now() + 60_000);
     const messages = await collectAuthorSearchWindow(api, guildId, job, { ...(minId ? { minId } : {}), ...(maxId ? { maxId } : {}) }, 0);
@@ -2057,7 +2064,13 @@ async function runCleanup(job: CleanupJob, closeSheet?: () => void, onComplete?:
                     onProgress?.(job);
                     continue;
                 }
-                audit(job, "author-search-fallback", "Indexed author search was unavailable; continuing with guarded history pagination");
+                job.authorSearchEscalationFailed = true;
+                job.historyHasMore = false;
+                job.stats.lastError = "Indexed author search is unavailable in this Revenge build; stopped before scanning more public-channel history.";
+                audit(job, "author-search-fallback", job.stats.lastError);
+                saveJob(job);
+                onProgress?.(job);
+                break;
             }
             if (isDirectMessageJob(job)) saveDMCheckpoint(job, pageMessages);
             recordProgressPoint(job);
