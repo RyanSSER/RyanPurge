@@ -228,7 +228,7 @@ type HistoryEntry = {
 
 const PATCHES: Array<() => void> = [];
 const STORAGE_KEY = "ryanpurge-storage-v4";
-const PLUGIN_VERSION = "1.0.19";
+const PLUGIN_VERSION = "1.0.23";
 const LEGACY_STORAGE_KEYS = ["deep-personal-message-cleanup-v3"];
 const DM_CHECKPOINTS_KEY = "dm_checkpoints_v2";
 const PREVIEW_PLAN_KEY = "ryanpurge_preview_plan_v2";
