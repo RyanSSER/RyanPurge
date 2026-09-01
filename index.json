@@ -8,7 +8,7 @@
       "description": "Deleting messages is better than deleting friendships; this plugin lets you safely and precisely delete your own messages from either a DM or a specific Discord channel.",
       "author": "RyanOS",
       "channels": {
-        "latest": "1.0.17"
+        "latest": "1.0.18"
       },
       "versions": {
         "1.0.0": {
@@ -236,6 +236,19 @@
           "url": "https://ryansser.github.io/RyanPurge/RyanPurge-1.0.17.zip",
           "sha256": "7b801b679279c6fd96dee48344567a1e788728fa4f7019d56df4e41a9cb1176c",
           "size": 60719,
+          "dependencies": {
+            "revenge.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        },
+        "1.0.18": {
+          "url": "https://ryansser.github.io/RyanPurge/RyanPurge-1.0.18.zip",
+          "sha256": "5952ce52f91f62af8feecc4511bdd657f89e5b7155642ed44d327db2f5a6575a",
+          "size": 60789,
           "dependencies": {
             "revenge.api": {
               "version": ">=1 <2"

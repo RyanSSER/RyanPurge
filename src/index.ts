@@ -1508,6 +1508,7 @@ async function requestOlderMessages(channelId: string, before: string | undefine
     if (!sources.length) return { requested: false, messages: [], hasMore: undefined };
     let firstError: unknown;
     let retryDelayOverride = 0;
+    let serviceUnavailableSeen = false;
     for (let attempt = 0; attempt < MAX_HISTORY_PAGE_RETRIES; attempt += 1) {
         const lastRequestAt = Number(job?.historyLastRequestAt || 0);
         const waitForGap = Math.max(0, HISTORY_PAGE_GAP_MS - (now() - lastRequestAt));
@@ -1524,20 +1525,22 @@ async function requestOlderMessages(channelId: string, before: string | undefine
                 if (result.messages.length || result.hasMore === false) return { requested: true, messages: result.messages, hasMore: result.hasMore };
             } catch (error) {
                 firstError ||= error;
+                serviceUnavailableSeen ||= /\b503\b|service unavailable/i.test(safeError(error));
                 retryDelayOverride = Math.max(retryDelayOverride, retryAfterMs(error));
                 if (job) noteFailure(job, error, `history source ${index + 1}`);
                 if (index === 0 && job && /timed out|unavailable|not a function|invalid/i.test(safeError(error))) job.historyRestDisabled = true;
                 if (job) job.stats.lastError = `History source ${index + 1} unavailable: ${safeError(error)}`;
             }
         }
+        if (serviceUnavailableSeen && attempt >= 1) break;
         if (job) {
             job.stats.rateLimitWaits += 1;
-            const delay = Math.min(15_000, Math.max(750 * 2 ** attempt, retryDelayOverride));
+            const delay = serviceUnavailableSeen ? Math.min(2_000, Math.max(750, retryDelayOverride)) : Math.min(15_000, Math.max(750 * 2 ** attempt, retryDelayOverride));
             job.stats.totalWaitMs += delay;
             job.stats.lastError = `History page retry ${attempt + 1}/${MAX_HISTORY_PAGE_RETRIES}: ${safeError(firstError)}`;
             saveJob(job);
         }
-        await sleep(Math.min(15_000, Math.max(750 * 2 ** attempt, retryDelayOverride)));
+        await sleep(serviceUnavailableSeen ? Math.min(2_000, Math.max(750, retryDelayOverride)) : Math.min(15_000, Math.max(750 * 2 ** attempt, retryDelayOverride)));
         retryDelayOverride = 0;
     }
     if (job) {
