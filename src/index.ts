@@ -1997,21 +1997,28 @@ async function runCleanup(job: CleanupJob, closeSheet?: () => void, onComplete?:
 
     try {
         const ownerCursorJumped = initializeOwnerCursor(job);
-        if (!isDirectMessageJob(job)) {
+        const shouldSearchInitially = !isDirectMessageJob(job) || !ownerCursorJumped;
+        if (shouldSearchInitially) {
             job.authorSearchEscalated = true;
-            audit(job, ownerCursorJumped ? "owner-cursor-ready" : "author-search-deferred", ownerCursorJumped ? "Public-channel search deferred until three history pages contain no messages from the current user" : "No local owner cursor was available; loading the newest history page before any indexed search");
-            saveJob(job);
-            onProgress?.(job);
-        } else if (!ownerCursorJumped) {
-            const authorSearch = await withTimeout(requestAuthorSearchHistory(job), AUTHOR_SEARCH_BUDGET_MS + 5_000);
-            if (authorSearch.requested && authorSearch.complete) {
+            audit(job, "author-search-initial", ownerCursorJumped ? "Searching for older messages after the current owner cursor" : "Searching Discord for the newest message belonging to the current user");
+            const authorSearch = await withTimeout(requestAuthorSearchHistory(job), 15_000);
+            if (authorSearch.requested && authorSearch.complete && authorSearch.messages.length) {
                 job.historyBatch = authorSearch.messages;
                 job.historyHasMore = false;
                 job.historyStarted = true;
                 job.historyCursor = authorSearch.messages[0]?.id || job.historyCursor;
+                audit(job, "owner-search-jump", `Found ${authorSearch.messages.length} messages and jumped to the owner history window`, job.historyCursor);
+                saveJob(job);
+                onProgress?.(job);
+            } else {
+                audit(job, "author-search-initial-fallback", "Indexed search did not return a usable owner cursor; continuing with guarded history pagination");
                 saveJob(job);
                 onProgress?.(job);
             }
+        } else {
+            audit(job, "owner-cursor-ready", "Using the latest locally loaded owner message as the starting cursor");
+            saveJob(job);
+            onProgress?.(job);
         }
     } catch (error) {
         job.stats.lastError = `Author search fallback: ${safeError(error)}`;
@@ -2116,7 +2123,7 @@ async function runCleanup(job: CleanupJob, closeSheet?: () => void, onComplete?:
             const pageMessages = uniqueChannelMessages((page.messages || []).concat(afterMessages), job.channelId);
             const currentPageMessages = uniqueChannelMessages((page.messages || []).concat(newlyLoadedMessages), job.channelId);
             const ownerMessagesInPage = currentPageMessages.filter((message) => messageAuthorId(message) === String(job.ownerId));
-            if (!isDirectMessageJob(job) && !job.authorSearchEscalated && ownerMessagesInPage.length === 0) {
+            if (!isDirectMessageJob(job) && ownerMessagesInPage.length === 0) {
                 job.historyOwnerMissPages = Math.max(0, Number(job.historyOwnerMissPages || 0)) + 1;
             } else if (ownerMessagesInPage.length > 0) {
                 job.historyOwnerFound = true;
