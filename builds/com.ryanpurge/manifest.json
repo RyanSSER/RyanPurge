@@ -2,9 +2,9 @@
   "format": 1,
   "id": "com.ryanpurge",
   "name": "RyanPurge",
-  "description": "Safely delete only your own Discord messages in the selected DM or channel, with preview, filters, resume, pacing, and reports.",
+  "description": "Safely find and delete only your own Discord messages in the selected DM or channel with author-directed search, preview, filters, resume, pacing, and reports.",
   "author": "RyanOS",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "dependencies": {
     "revenge.api": {
       "version": ">=1 <2"

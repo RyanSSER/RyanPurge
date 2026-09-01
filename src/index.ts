@@ -1157,6 +1157,24 @@ function findRestApi() {
     }
 }
 
+async function restGet(api: any, url: string, query: any): Promise<any> {
+    const encoded = Object.entries(query || {}).filter(([, value]) => value !== undefined && value !== null && value !== "").map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`).join("&");
+    const urlWithQuery = encoded ? `${url}?${encoded}` : url;
+    const calls: Array<() => Promise<any>> = [
+        () => Promise.resolve(api.get({ url, query })),
+        () => Promise.resolve(api.get(url, query)),
+        () => Promise.resolve(api.get(urlWithQuery)),
+    ];
+    let firstError: unknown;
+    for (const call of calls) {
+        try {
+            return await withTimeout(call(), HISTORY_REQUEST_TIMEOUT_MS);
+        } catch (error) {
+            firstError ||= error;
+        }
+    }
+    throw firstError || new Error("REST GET failed");
+}
 function channelGuildId(channelId: string): string | undefined {
     try {
         const stores = [storeWithMethods(["getChannel"]), storeWithMethods(["getChannelById"]), storeWithMethods(["getCachedChannel"])];
@@ -1265,7 +1283,20 @@ function authorSearchQuery(job: CleanupJob, offset: number, window: AuthorSearch
     return query;
 }
 
-async function searchAuthorWindow(api: any, guildId: string, job: CleanupJob, window: AuthorSearchWindow) {
+async function requestAuthorSearchPage(api: any, guildId: string | undefined, job: CleanupJob, offset: number, window: AuthorSearchWindow) {
+    const query = authorSearchQuery(job, offset, window);
+    const paths = guildId ? [`/guilds/${guildId}/messages/search`, `/channels/${job.channelId}/messages/search`] : [`/channels/${job.channelId}/messages/search`];
+    let firstError: unknown;
+    for (const path of paths) {
+        try {
+            return await restGet(api, path, query);
+        } catch (error) {
+            firstError ||= error;
+        }
+    }
+    throw firstError || new Error("Author search endpoint unavailable");
+}
+async function searchAuthorWindow(api: any, guildId: string | undefined, job: CleanupJob, window: AuthorSearchWindow) {
     let offset = 0;
     let totalResults: number | undefined;
     let collected: any[] = [];
@@ -1274,7 +1305,7 @@ async function searchAuthorWindow(api: any, guildId: string, job: CleanupJob, wi
         let response: any;
         try {
             await reserveAuthorSearchRequest(job);
-            response = await withTimeout(api.get({ url: `/guilds/${guildId}/messages/search`, query: authorSearchQuery(job, offset, window) }), HISTORY_REQUEST_TIMEOUT_MS);
+            response = await requestAuthorSearchPage(api, guildId, job, offset, window);
         } catch (error) {
             noteFailure(job, error, "author search");
             job.stats.lastError = `Author search unavailable: ${safeError(error)}`;
@@ -1338,7 +1369,7 @@ async function collectAuthorSearchWindow(api: any, guildId: string, job: Cleanup
 async function requestAuthorSearchHistory(job: CleanupJob) {
     const api = findRestApi();
     const guildId = channelGuildId(job.channelId);
-    if (!api || !guildId) return { requested: false, complete: false, messages: [] as any[] };
+    if (!api) return { requested: false, complete: false, messages: [] as any[] };
     const rules = job.options.deletionRules;
     const minId = rules.dateMode === "after" || rules.dateMode === "range" ? snowflakeFromTimestamp(Number(rules.dateAfter)) : undefined;
     const maxId = rules.dateMode === "before" || rules.dateMode === "range" ? snowflakeFromTimestamp(Number(rules.dateBefore)) : snowflakeFromTimestamp(now() + 60_000);
