@@ -1298,6 +1298,7 @@ async function requestAuthorSearchPage(api: any, guildId: string | undefined, jo
         try {
             return await restGet(api, path, query, AUTHOR_SEARCH_TIMEOUT_MS);
         } catch (error) {
+            if (isRateLimitError(error)) throw error;
             firstError ||= error;
         }
     }
@@ -1308,18 +1309,30 @@ async function searchAuthorWindow(api: any, guildId: string | undefined, job: Cl
     let totalResults: number | undefined;
     let collected: any[] = [];
     let indexRetries = 0;
+    let rateLimitRetries = 0;
     while (offset <= AUTHOR_SEARCH_MAX_OFFSET && !cancelled && now() - Number(job.authorSearchStartedAt || now()) < AUTHOR_SEARCH_BUDGET_MS) {
         let response: any;
         try {
             await reserveAuthorSearchRequest(job);
             response = await requestAuthorSearchPage(api, guildId, job, offset, window);
-        } catch (error) {
+                } catch (error) {
+            if (isRateLimitError(error) && rateLimitRetries < 3) {
+                rateLimitRetries += 1;
+                const retryDelay = Math.min(15_000, Math.max(1_250, retryAfterMs(error) + 250));
+                job.stats.rateLimitWaits += 1;
+                job.stats.totalWaitMs += retryDelay;
+                job.stats.lastError = `Author search rate limited; retrying in ${Math.ceil(retryDelay / 1000)}s (${rateLimitRetries}/3)`;
+                audit(job, "author-search-rate-limit", job.stats.lastError);
+                saveJob(job);
+                await sleep(retryDelay);
+                continue;
+            }
             noteFailure(job, error, "author search");
             job.stats.lastError = `Author search unavailable: ${safeError(error)}`;
             saveJob(job);
             return { requested: false, tooLarge: false, messages: [] as any[] };
         }
-
+        rateLimitRetries = 0;
         const result = authorSearchResult(response);
         if (!result.recognized) {
             noteUnexpectedResponse(job, "author search response shape was not recognized");
