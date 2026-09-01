@@ -841,7 +841,9 @@ function messageAuthorId(message: any): string {
 function loadedChannelMessages(channelId: string): any[] {
     const messageStore = findByProps("getMessages");
     return messageArray(messageStore?.getMessages?.(channelId))
-        .filter((message) => message?.id && messageChannelId(message) === channelId)
+        .filter((message) => message?.id)
+        .map((message) => messageChannelId(message) === channelId ? message : { ...message, channel_id: channelId })
+        .filter((message) => messageChannelId(message) === channelId)
         .sort(isEarlierMessage);
 }
 
