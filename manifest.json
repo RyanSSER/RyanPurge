@@ -1,7 +1,7 @@
 {
   "name": "RyanPurge",
   "description": "Safely delete only your own Discord messages in the selected DM or channel.",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "authors": [
     {
       "name": "RyanOS",
@@ -12,5 +12,5 @@
   "vendetta": {
     "icon": null
   },
-  "hash": "149643F72BC0574012C975B77F8A042D20FA767488797A8C47066FD08098ADB2"
+  "hash": "547E5BDF4FF012AF29A4561A9ABE71092D93387FD34485B1794E84797CC9A1E4"
 }

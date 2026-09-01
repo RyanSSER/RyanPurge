@@ -253,8 +253,8 @@ const AUTHOR_SEARCH_MAX_OFFSET = 9_975;
 const AUTHOR_SEARCH_WINDOW_RESULT_LIMIT = 9_000;
 const AUTHOR_SEARCH_INDEX_RETRIES = 3;
 const AUTHOR_SEARCH_MAX_SPLIT_DEPTH = 24;
-const AUTHOR_SEARCH_WORKERS = 2;
-const AUTHOR_SEARCH_GAP_MS = 350;
+const AUTHOR_SEARCH_WORKERS = 1;
+const AUTHOR_SEARCH_GAP_MS = 1500;
 const AUTHOR_SEARCH_TIMEOUT_MS = 5_000;
 const AUTHOR_SEARCH_BUDGET_MS = 20_000;
 const MAX_SEEN_IDS = 200_000;
@@ -1328,7 +1328,7 @@ function authorSearchQuery(job: CleanupJob, offset: number, window: AuthorSearch
 
 async function requestAuthorSearchPage(api: any, guildId: string | undefined, job: CleanupJob, offset: number, window: AuthorSearchWindow) {
     const query = authorSearchQuery(job, offset, window);
-    const paths = guildId ? [`/channels/${job.channelId}/messages/search`, `/guilds/${guildId}/messages/search`] : [`/channels/${job.channelId}/messages/search`];
+    const paths = guildId ? [`/guilds/${guildId}/messages/search`, `/channels/${job.channelId}/messages/search`] : [`/channels/${job.channelId}/messages/search`];
     let firstError: unknown;
     for (const path of paths) {
         try {
@@ -1433,7 +1433,13 @@ async function collectAuthorSearchWindow(api: any, guildId: string, job: Cleanup
 async function requestAuthorSearchHistory(job: CleanupJob) {
     const api = findRestApi();
     const guildId = channelGuildId(job.channelId);
-    if (!api) return { requested: false, complete: false, messages: [] as any[] };
+    if (!api) {
+        job.stats.lastError = "Indexed author search API was not exposed by this Revenge build.";
+        audit(job, "author-search-unavailable", job.stats.lastError);
+        saveJob(job);
+        return { requested: false, complete: false, messages: [] as any[] };
+    }
+    audit(job, "author-search-start", `Searching indexed messages for account ${job.ownerId} in channel ${job.channelId}`);
     const rules = job.options.deletionRules;
     job.authorSearchStartedAt = now();
     const minId = rules.dateMode === "after" || rules.dateMode === "range" ? snowflakeFromTimestamp(Number(rules.dateAfter)) : undefined;
