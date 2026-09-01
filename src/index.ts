@@ -1997,17 +1997,21 @@ async function runCleanup(job: CleanupJob, closeSheet?: () => void, onComplete?:
 
     try {
         const ownerCursorJumped = initializeOwnerCursor(job);
-        if (!ownerCursorJumped && !isDirectMessageJob(job)) job.authorSearchEscalated = true;
-        if (!ownerCursorJumped) {
-            const authorSearch = await withTimeout(requestAuthorSearchHistory(job), AUTHOR_SEARCH_BUDGET_MS + 5_000);
-        if (authorSearch.requested && authorSearch.complete) {
-            job.historyBatch = authorSearch.messages;
-            job.historyHasMore = false;
-            job.historyStarted = true;
-            job.historyCursor = authorSearch.messages[0]?.id || job.historyCursor;
+        if (!isDirectMessageJob(job)) {
+            job.authorSearchEscalated = true;
+            audit(job, ownerCursorJumped ? "owner-cursor-ready" : "author-search-deferred", ownerCursorJumped ? "Public-channel search deferred until three history pages contain no messages from the current user" : "No local owner cursor was available; loading the newest history page before any indexed search");
             saveJob(job);
             onProgress?.(job);
-        }
+        } else if (!ownerCursorJumped) {
+            const authorSearch = await withTimeout(requestAuthorSearchHistory(job), AUTHOR_SEARCH_BUDGET_MS + 5_000);
+            if (authorSearch.requested && authorSearch.complete) {
+                job.historyBatch = authorSearch.messages;
+                job.historyHasMore = false;
+                job.historyStarted = true;
+                job.historyCursor = authorSearch.messages[0]?.id || job.historyCursor;
+                saveJob(job);
+                onProgress?.(job);
+            }
         }
     } catch (error) {
         job.stats.lastError = `Author search fallback: ${safeError(error)}`;
