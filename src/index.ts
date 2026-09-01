@@ -1975,6 +1975,9 @@ async function runCleanup(job: CleanupJob, closeSheet?: () => void, onComplete?:
     saveJob(job);
 
     try {
+        // Run indexed author search at most once per job. If it is unavailable or rate-limited,
+        // do not trigger the same expensive request again after three history pages.
+        if (!isDirectMessageJob(job)) job.authorSearchEscalated = true;
         const authorSearch = await requestAuthorSearchHistory(job);
         if (authorSearch.requested && authorSearch.complete) {
             job.historyBatch = authorSearch.messages;
