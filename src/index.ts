@@ -252,7 +252,7 @@ const AUTHOR_SEARCH_PAGE_SIZE = 25;
 const AUTHOR_SEARCH_MAX_OFFSET = 9_975;
 const AUTHOR_SEARCH_WINDOW_RESULT_LIMIT = 9_000;
 const AUTHOR_SEARCH_INDEX_RETRIES = 3;
-const AUTHOR_SEARCH_MAX_SPLIT_DEPTH = 24;
+const AUTHOR_SEARCH_MAX_SPLIT_DEPTH = 0;
 const AUTHOR_SEARCH_WORKERS = 1;
 const AUTHOR_SEARCH_GAP_MS = 1500;
 const AUTHOR_SEARCH_TIMEOUT_MS = 5_000;
@@ -1425,7 +1425,9 @@ async function collectAuthorSearchWindow(api: any, guildId: string, job: Cleanup
     const middle = (low + high) / BigInt(2);
     const left: AuthorSearchWindow = { ...(window.minId ? { minId: window.minId } : {}), maxId: String(middle) };
     const right: AuthorSearchWindow = { minId: String(middle), ...(window.maxId ? { maxId: window.maxId } : {}) };
-    const parts = await Promise.all([collectAuthorSearchWindow(api, guildId, job, left, depth + 1), collectAuthorSearchWindow(api, guildId, job, right, depth + 1)]);
+    const leftPart = await collectAuthorSearchWindow(api, guildId, job, left, depth + 1);
+    const rightPart = await collectAuthorSearchWindow(api, guildId, job, right, depth + 1);
+    const parts = [leftPart, rightPart];
     if (!parts[0] || !parts[1]) return undefined;
     return uniqueChannelMessages(parts[0].concat(parts[1]), job.channelId);
 }
@@ -1978,7 +1980,7 @@ async function runCleanup(job: CleanupJob, closeSheet?: () => void, onComplete?:
         // Run indexed author search at most once per job. If it is unavailable or rate-limited,
         // do not trigger the same expensive request again after three history pages.
         if (!isDirectMessageJob(job)) job.authorSearchEscalated = true;
-        const authorSearch = await requestAuthorSearchHistory(job);
+        const authorSearch = await withTimeout(requestAuthorSearchHistory(job), AUTHOR_SEARCH_BUDGET_MS + 5_000);
         if (authorSearch.requested && authorSearch.complete) {
             job.historyBatch = authorSearch.messages;
             job.historyHasMore = false;
